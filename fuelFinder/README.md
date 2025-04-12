@@ -30,10 +30,6 @@ Gas prices are constantly changing. FuelFinder provides:
 | **Backend**      | Flask (Python)              | Lightweight REST API; flexible and extendable |
 | **Database**     | PostgreSQL (Hosted)         | Relational DB with stored procs, transactions |
 | **Maps & Location** | Google Maps API + Expo Location | Interactive maps and accurate geolocation |
-| **BI Dashboard** | Google Looker Studio        | Real-time reporting and visualization |
-| **Version Control** | GitHub (individual repos) | Team collaboration and grading |
-| **Deployment (optional)** | Docker + Railway/Vercel | Hosted deployment and extra credit |
-
 ---
 
 ## 📱 Features
@@ -42,4 +38,4 @@ Gas prices are constantly changing. FuelFinder provides:
 - 📥 **Crowdsourced Price Confirmation**: Allows users to submit updated prices
 - 🗺️ **Trip Planner**: Plans optimal fuel stops along a route
 - 💾 **Save Favorites**: Users can save frequently visited stations
-- 📊 **Reporting Dashboard**: Track fuel pricing trends by region (BI)
+- 📊 **Reporting Dashboard**: Track fuel pricing trends by region 
