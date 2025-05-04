@@ -1,0 +1,7 @@
+{
+  "python.defaultInterpreterPath": "/Users/edgemaster/csc33600-repo-9000/fuelFinder/fuelfinder-backend/venv/bin/python",
+  "python.analysis.extraPaths": ["./app"],
+  "python.analysis.typeCheckingMode": "basic",
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": true
+}
