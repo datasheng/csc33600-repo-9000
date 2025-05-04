@@ -7,9 +7,24 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setUser(user); // ✅ user is either Firebase User or null
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      setUser(user);
       setLoading(false);
+
+      if (user) {
+        try {
+          const token = await user.getIdToken();
+          await fetch("http://localhost:8000/register-user", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ token }),
+          });
+        } catch (err) {
+          console.error("Error registering user:", err);
+        }
+      }
     });
 
     return unsub;
