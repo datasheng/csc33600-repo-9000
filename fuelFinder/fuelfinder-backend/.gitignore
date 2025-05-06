@@ -1,0 +1,2 @@
+# .gitignore
+app/credentials/firebase-service-account.json
