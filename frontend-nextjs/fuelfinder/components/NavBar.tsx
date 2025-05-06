@@ -12,9 +12,11 @@ export default function Navbar() {
     await signOut(auth);
   };
 
+  const redirectPath = !loading && user ? "/map" : "/";
+
   return (
     <nav className="bg-[#1f1f2e] text-white px-6 py-4 flex justify-between items-center shadow-md">
-      <Link href="/" className="text-2xl font-bold text-blue-400">
+      <Link href={redirectPath} className="text-2xl font-bold text-blue-400">
         FuelFinder
       </Link>
 
