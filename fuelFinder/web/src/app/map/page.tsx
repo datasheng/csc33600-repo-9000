@@ -11,16 +11,9 @@ import ConfirmPriceModal from "../../../components/Modals/ConfirmPriceModal";
 import TripPlannerModal from "../../../components/Modals/TripPlannerModal";
 import ProtectedRoute from "../../../components/ProtectedRoute";
 import AddStationModal from "../../../components/Modals/AddStationModal";
-
-type Station = {
-  id: number;
-  name: string;
-  latitude: number;
-  longitude: number;
-  latest_price?: number | null;
-  recorded_at?: string;
-  prices?: { price: number; recorded_at: string }[];
-};
+import StationInfoWindow from "../../../components/StationInfoWindow";
+import { auth } from "../lib/firebase";
+import { Station } from "../../../schemas/station";
 
 /**
  * Calculates the distance in meters between two coordinates
@@ -59,6 +52,7 @@ function MapPageContent() {
   const mapRef = useRef<google.maps.Map | null>(null);
 
   const [stations, setStations] = useState<Station[]>([]);
+  const [favorites, setFavorites] = useState<Station[]>([]);
 
   const [isAddStationModalOpen, setIsAddStationModalOpen] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -72,7 +66,48 @@ function MapPageContent() {
       );
       const data: Station[] = await res.json();
       setStations(data);
+
+      console.log("Fetched stations:", data);
       return data;
+    } catch (err) {
+      console.error(err);
+      return [];
+    }
+  };
+
+  const fetchFavorites = async (): Promise<Station[]> => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        // not signed in yet
+        return [];
+      }
+
+      // get fresh token
+      const token = await user.getIdToken(/* forceRefresh= */ true);
+
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/favorites`,
+        {
+          credentials: "include",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!res.ok) {
+        console.error("Failed to load favorites", await res.text());
+        return [];
+      }
+
+      const data = await res.json();
+      // guard against non‑array
+      const favs = Array.isArray(data) ? data : [];
+      setFavorites(favs);
+
+      console.log("Fetched favorites:", favs);
+      return favs;
     } catch (err) {
       console.error(err);
       return [];
@@ -98,7 +133,35 @@ function MapPageContent() {
 
   useEffect(() => {
     fetchStations();
+    fetchFavorites();
   }, []);
+
+  const toggleFavorite = async (station: Station) => {
+    const isFavorited = favorites.some((f) => f.id === station.id);
+
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const token = await user.getIdToken(/* forceRefresh= */ false);
+    const method = isFavorited ? "DELETE" : "POST";
+
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/favorites/${station.id}`,
+      {
+        method,
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    if (!res.ok) {
+      console.error("toggle failed", await res.text());
+    }
+    // re-fetch your updated list
+    await fetchFavorites();
+  };
 
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
@@ -185,57 +248,102 @@ function MapPageContent() {
           ))}
 
           {selectedStation && (
-            <InfoWindow
-              position={{
-                lat: selectedStation.latitude,
-                lng: selectedStation.longitude,
+            <StationInfoWindow
+              station={selectedStation}
+              onClose={() => setSelectedStation(null)}
+              onConfirm={() => setIsConfirmModalOpen(true)}
+              isFavorited={favorites.some((f) => f.id === selectedStation.id)}
+              onToggleFavorite={() => {
+                toggleFavorite(selectedStation);
               }}
-              onCloseClick={() => setSelectedStation(null)}
-            >
-              <div className="p-4 w-60 bg-white rounded-lg shadow-md">
-                <h3 className="text-xl font-bold text-gray-900 mb-2">
-                  {selectedStation.name}
-                </h3>
-
-                <p className="text-sm text-gray-800 mb-1">
-                  <span className="font-medium text-gray-900">Price:</span>{" "}
-                  {selectedStation.latest_price != null ? (
-                    <span className="text-green-700">
-                      ${selectedStation.latest_price.toFixed(2)}
-                    </span>
-                  ) : (
-                    <span className="text-red-600">N/A</span>
-                  )}
-                </p>
-
-                {selectedStation.recorded_at && (
-                  <p className="text-xs text-gray-600 mb-4">
-                    Updated{" "}
-                    {new Date(selectedStation.recorded_at).toLocaleString()}
-                  </p>
-                )}
-
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setIsConfirmModalOpen(true)}
-                    className="flex-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    onClick={() =>
-                      alert(`${selectedStation.name} saved to favorites.`)
-                    }
-                    className="flex-1 px-3 py-1 border border-gray-400 hover:bg-gray-100 text-gray-800 rounded-lg transition"
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            </InfoWindow>
+            />
           )}
         </GoogleMap>
+      </div>
 
+      {/* Right column: Station list */}
+      <div className="w-1/3 h-full bg-white text-gray-900 p-6 shadow-lg">
+        {/* Search Bar */}
+        <input
+          type="text"
+          placeholder="Search gas stations..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          className="sticky w-full p-2 mb-4 border rounded"
+        />
+
+        <div className="overflow-y-auto max-h-[calc(100vh-250px)]">
+          {" "}
+          {/* Adjusted height */}
+          {/* Scrollable container */}
+          {/* Favorites Section */}
+          <h2 className="text-lg font-semibold mb-2">Favorites</h2>
+          {favorites.length ? (
+            <ul className="space-y-2 mb-4">
+              {favorites.map((station) => (
+                <li
+                  key={station.id}
+                  onClick={() => handleStationSelect(station)}
+                  className="p-2 bg-yellow-50 rounded-lg hover:bg-yellow-100 cursor-pointer transition duration-200 ease-in-out"
+                >
+                  {station.name}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm italic mb-4">No favorites yet.</p>
+          )}
+          <hr className="my-4" />
+          {/* Station List */}
+          <ul className="space-y-2">
+            {stationList.map((station) => {
+              const isActive = selectedStation?.id === station.id;
+              return (
+                <li
+                  key={station.id}
+                  onClick={() => handleStationSelect(station)}
+                  className={`
+            p-3 bg-gray-100 rounded-lg hover:bg-gray-200 cursor-pointer transition duration-200 ease-in-out
+            ${isActive ? "ring-2 ring-blue-400" : ""}
+          `}
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="font-medium">{station.name}</p>
+                      <p className="text-sm text-gray-600">
+                        {station.latest_price != null
+                          ? `$${station.latest_price.toFixed(2)}`
+                          : "No price"}
+                      </p>
+                    </div>
+                    <p className="text-sm">
+                      {(station.distance / 1609.34).toFixed(2)} mi
+                    </p>
+                  </div>
+
+                  {/* Expand past prices when active */}
+                  {isActive && (station.prices?.length ?? 0) > 0 && (
+                    <ul className="mt-2 bg-gray-50 border border-gray-200 rounded-md p-2 space-y-1">
+                      {station.prices!.slice(0, 5).map((p) => (
+                        <li
+                          key={p.recorded_at}
+                          className="flex justify-between text-sm"
+                        >
+                          <span>${p.price.toFixed(2)}</span>
+                          <span className="text-gray-500">
+                            {new Date(p.recorded_at).toLocaleString()}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {/* Floating Buttons */}
         <div className="fixed bottom-6 right-6 z-50 flex space-x-3">
           <button
             className="px-5 py-2 bg-green-600 text-white rounded-full shadow-lg"
@@ -251,64 +359,6 @@ function MapPageContent() {
             Plan Trip
           </button>
         </div>
-      </div>
-
-      {/* Right column: Station list */}
-      <div className="w-1/3 h-full bg-white text-gray-900 p-6 overflow-y-auto shadow-lg">
-        <input
-          type="text"
-          placeholder="Search gas stations..."
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          className="w-full p-2 mb-4 border rounded"
-        />
-
-        <ul className="space-y-2">
-          {stationList.map((station) => {
-            const isActive = selectedStation?.id === station.id;
-            return (
-              <li
-                key={station.id}
-                onClick={() => handleStationSelect(station)}
-                className={`
-            p-3 bg-gray-100 rounded hover:bg-gray-200 cursor-pointer
-            ${isActive ? "ring-2 ring-blue-400" : ""}
-          `}
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="font-medium">{station.name}</p>
-                    <p className="text-sm text-gray-600">
-                      {station.latest_price != null
-                        ? `$${station.latest_price.toFixed(2)}`
-                        : "No price"}
-                    </p>
-                  </div>
-                  <p className="text-sm">
-                    {(station.distance / 1609.34).toFixed(2)} mi
-                  </p>
-                </div>
-
-                {/* Expand past prices when active */}
-                {isActive && (station.prices?.length ?? 0) > 0 && (
-                  <ul className="mt-2 bg-gray-50 border border-gray-200 rounded p-2 space-y-1">
-                    {station.prices!.slice(0, 5).map((p) => (
-                      <li
-                        key={p.recorded_at}
-                        className="flex justify-between text-sm"
-                      >
-                        <span>${p.price.toFixed(2)}</span>
-                        <span className="text-gray-500">
-                          {new Date(p.recorded_at).toLocaleString()}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ul>
       </div>
 
       {/* Modals */}
