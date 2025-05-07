@@ -18,10 +18,16 @@ class StationOut(StationBase):
     id: int
 
 
+class PriceOut(BaseModel):
+    price: float
+    recorded_at: datetime
+
+
 class StationWithPriceOut(StationBase):
     id: int
     latest_price: Optional[float]
     recorded_at: Optional[datetime]
+    prices: List[PriceOut]
 
 
 class PriceBase(BaseModel):
@@ -66,7 +72,7 @@ def list_stations():
             s.name,
             s.latitude,
             s.longitude,
-            -- latest price (or NULL if no price records)
+            -- latest single price
             (
               SELECT price
               FROM prices
@@ -74,33 +80,51 @@ def list_stations():
               ORDER BY recorded_at DESC
               LIMIT 1
             ) AS latest_price,
-            -- timestamp of that latest price
             (
               SELECT recorded_at
               FROM prices
               WHERE station_id = s.id
               ORDER BY recorded_at DESC
               LIMIT 1
-            ) AS recorded_at
+            ) AS recorded_at,
+            -- full price history as JSON array
+            COALESCE(
+              (
+                SELECT JSON_AGG(
+                  JSON_BUILD_OBJECT(
+                    'price', p.price,
+                    'recorded_at', p.recorded_at
+                  )
+                  ORDER BY p.recorded_at DESC
+                )
+                FROM prices p
+                WHERE p.station_id = s.id
+              ),
+              '[]'
+            ) AS prices
         FROM stations s
         ORDER BY s.id;
-        """
+    """
     )
     rows = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    return [
-        StationWithPriceOut(
-            id=r[0],
-            name=r[1],
-            latitude=r[2],
-            longitude=r[3],
-            latest_price=r[4],
-            recorded_at=r[5],
+    # build a list of column names in order
+    columns = [col[0] for col in cur.description]
+    result = []
+    for row in rows:
+        # zip together names and values into a dict
+        row_dict = dict(zip(columns, row))
+        result.append(
+            {
+                "id": row_dict["id"],
+                "name": row_dict["name"],
+                "latitude": row_dict["latitude"],
+                "longitude": row_dict["longitude"],
+                "latest_price": row_dict["latest_price"],
+                "recorded_at": row_dict["recorded_at"],
+                "prices": row_dict["prices"],
+            }
         )
-        for r in rows
-    ]
+    return result
 
 
 # Add a price record to a station
