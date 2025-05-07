@@ -1,43 +1,16 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from datetime import datetime
-from typing import List, Optional
+from typing import List
 from app.db.connection import get_db_connection
 
+from app.schemas import (
+    StationBase,
+    StationOut,
+    StationWithPriceOut,
+    PriceBase,
+    PriceCreatedOut,
+)
+
 router = APIRouter()
-
-
-# Pydantic schemas
-class StationBase(BaseModel):
-    name: str
-    latitude: float
-    longitude: float
-
-
-class StationOut(StationBase):
-    id: int
-
-
-class PriceOut(BaseModel):
-    price: float
-    recorded_at: datetime
-
-
-class StationWithPriceOut(StationBase):
-    id: int
-    latest_price: Optional[float]
-    recorded_at: Optional[datetime]
-    prices: List[PriceOut]
-
-
-class PriceBase(BaseModel):
-    price: float
-
-
-class PriceOut(PriceBase):
-    id: int
-    station_id: int
-    recorded_at: datetime
 
 
 # Create a station
@@ -128,7 +101,7 @@ def list_stations():
 
 
 # Add a price record to a station
-@router.post("/{station_id}/prices", response_model=PriceOut, status_code=201)
+@router.post("/{station_id}/prices", response_model=PriceCreatedOut, status_code=201)
 def add_price(station_id: int, p: PriceBase):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -151,7 +124,7 @@ def add_price(station_id: int, p: PriceBase):
     conn.commit()
     cur.close()
     conn.close()
-    return PriceOut(
+    return PriceCreatedOut(
         id=row[0],
         station_id=row[1],
         price=row[2],

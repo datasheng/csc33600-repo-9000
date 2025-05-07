@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS favorites (
+  user_id    INTEGER NOT NULL
+    REFERENCES users(id)
+    ON DELETE CASCADE,
+  station_id INTEGER NOT NULL
+    REFERENCES stations(id)
+    ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, station_id)
+);

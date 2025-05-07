@@ -21,6 +21,7 @@ if __name__ == "__main__":
         "init_users_table.sql",
         "init_stations_table.sql",
         "init_prices_table.sql",
+        "init_favorites_table.sql",
     ]:
         try:
             run_sql_file(script)
