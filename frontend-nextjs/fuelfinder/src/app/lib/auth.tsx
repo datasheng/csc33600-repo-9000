@@ -35,13 +35,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (firebaseUser) {
         const token = await firebaseUser.getIdToken();
         try {
-          await fetch("http://localhost:8000/register-user", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token }),
-          });
+          await fetch(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/register-user`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token }),
+            }
+          );
         } catch (err) {
-          console.error("❌ Backend registration error:", err);
+          console.error("Backend registration error:", err);
         }
       }
     });
