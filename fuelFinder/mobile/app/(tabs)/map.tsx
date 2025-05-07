@@ -12,7 +12,7 @@ import MapView, { Region } from "react-native-maps";
 import * as Location from "expo-location";
 import type { LocationObjectCoords } from "expo-location";
 import SearchBar from "../../components/map/SearchBar";
-import ConfirmPriceModal from "../..//components/map/ConfirmPriceModal";
+import ConfirmPriceModal from "../../components/map/ConfirmPriceModal";
 import StationMarker from "../../components/map/StationMarker";
 import TripPlannerModal from "../../components/map/TripPlannerModal";
 
