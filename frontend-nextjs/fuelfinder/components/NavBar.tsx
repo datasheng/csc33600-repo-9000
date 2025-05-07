@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useAuth } from "../lib/auth";
-import { auth } from "../lib/firebase";
+import { useAuth } from "../src/app/lib/auth";
+import { auth } from "../src/app/lib/firebase";
 import { signOut } from "firebase/auth";
 
 export default function Navbar() {
