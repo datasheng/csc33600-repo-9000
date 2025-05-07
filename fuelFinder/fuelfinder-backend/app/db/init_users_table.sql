@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  firebase_uid TEXT UNIQUE NOT NULL,
+  email TEXT
+);
