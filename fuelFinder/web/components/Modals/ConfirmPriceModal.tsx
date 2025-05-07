@@ -3,25 +3,56 @@
 import React, { useState } from "react";
 
 export type ConfirmPriceModalProps = {
-  /** Controls visibility of the modal */
   visible: boolean;
-  /** Called to close the modal without submitting */
+  stationID: number;
+  onSuccess: () => void;
   onClose: () => void;
-  /** Called with the entered price when the form is submitted */
-  onSubmit: (price: string) => void;
 };
 
 const ConfirmPriceModal: React.FC<ConfirmPriceModalProps> = ({
   visible,
+  stationID,
+  onSuccess,
   onClose,
-  onSubmit,
 }) => {
   const [price, setPrice] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    onSubmit(price);
-    setPrice("");
+    setError(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations/${stationID}/prices`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ price: Number(price) }),
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Error ${res.status}: ${text}`);
+      }
+
+      const newPriceRecord: { price: number; recorded_at: string } =
+        await res.json();
+
+      onSuccess();
+      setPrice("");
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to add price");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!visible) return null;
@@ -45,23 +76,35 @@ const ConfirmPriceModal: React.FC<ConfirmPriceModalProps> = ({
               placeholder="e.g. 3.45"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
+              disabled={loading}
               className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
             />
           </div>
+
+          {error && <p className="text-red-600 text-sm">{error}</p>}
 
           <div className="flex space-x-2">
             <button
               type="submit"
-              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
+              disabled={loading}
+              className={`flex-1 py-2 font-semibold rounded-lg transition
+                ${
+                  loading
+                    ? "bg-gray-400 cursor-not-allowed text-white"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                }`}
             >
-              Submit
+              {loading ? "Submitting…" : "Submit"}
             </button>
             <button
               type="button"
               onClick={() => {
                 setPrice("");
+                setError(null);
                 onClose();
               }}
+              disabled={loading}
               className="flex-1 py-2 border border-gray-400 hover:bg-gray-100 text-gray-800 font-semibold rounded-lg transition"
             >
               Cancel

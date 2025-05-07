@@ -7,9 +7,10 @@ import {
   InfoWindow,
   useLoadScript,
 } from "@react-google-maps/api";
-import ConfirmPriceModal from "../../../components/ConfirmPriceModal";
-import TripPlannerModal from "../../../components/TripPlannerModal";
+import ConfirmPriceModal from "../../../components/Modals/ConfirmPriceModal";
+import TripPlannerModal from "../../../components/Modals/TripPlannerModal";
 import ProtectedRoute from "../../../components/ProtectedRoute";
+import AddStationModal from "../../../components/Modals/AddStationModal";
 
 type Station = {
   id: number;
@@ -18,6 +19,7 @@ type Station = {
   longitude: number;
   latest_price?: number | null;
   recorded_at?: string;
+  prices?: { price: number; recorded_at: string }[];
 };
 
 /**
@@ -53,81 +55,50 @@ function MapPageContent() {
   const [userLocation, setUserLocation] =
     useState<google.maps.LatLngLiteral | null>(null);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
-  const [isTripModalOpen, setIsTripModalOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const mapRef = useRef<google.maps.Map | null>(null);
 
   const [stations, setStations] = useState<Station[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    latitude: "",
-    longitude: "",
-    price: "",
-  });
+
+  const [isAddStationModalOpen, setIsAddStationModalOpen] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [isTripModalOpen, setIsTripModalOpen] = useState(false);
 
   // Fetch stations with latest prices
-  const fetchStations = async () => {
+  const fetchStations = async (): Promise<Station[]> => {
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations`
       );
       const data: Station[] = await res.json();
       setStations(data);
+      return data;
     } catch (err) {
       console.error(err);
+      return [];
     }
+  };
+
+  const getStationIcon = (price?: number | null): google.maps.Icon => {
+    // choose green if under $3.50, yellow if between, red if expensive
+    const color =
+      price == null
+        ? "grey"
+        : price < 3.5
+        ? "green"
+        : price < 4.0
+        ? "yellow"
+        : "red";
+
+    return {
+      url: `http://maps.google.com/mapfiles/ms/icons/${color}-dot.png`,
+      scaledSize: new google.maps.Size(32, 32),
+    };
   };
 
   useEffect(() => {
     fetchStations();
   }, []);
-
-  // handle form submission for adding a new station
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // 1) Create the station
-    const stationRes = await fetch(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name,
-          latitude: parseFloat(form.latitude),
-          longitude: parseFloat(form.longitude),
-        }),
-      }
-    );
-
-    if (!stationRes.ok) {
-      console.error("Failed to create station");
-      return;
-    }
-    const newStation = await stationRes.json();
-
-    // 2) Immediately add its price
-    const priceRes = await fetch(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations/${newStation.id}/prices`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ price: parseFloat(form.price) }),
-      }
-    );
-
-    if (!priceRes.ok) {
-      console.error("Station created but failed to add price");
-      return;
-    }
-
-    // 3) Update UI
-    await fetchStations();
-    setShowForm(false);
-    setForm({ name: "", latitude: "", longitude: "", price: "" });
-  };
 
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
@@ -171,10 +142,14 @@ function MapPageContent() {
 
   const handleStationSelect = (station: Station) => {
     setSelectedStation(station);
-    if (mapRef.current) {
-      mapRef.current.panTo({ lat: station.latitude, lng: station.longitude });
-      mapRef.current.setZoom(15);
-    }
+    const map = mapRef.current;
+    if (!map) return;
+
+    map.panTo({ lat: station.latitude, lng: station.longitude });
+
+    setTimeout(() => {
+      map.setZoom(15);
+    }, 500);
   };
 
   return (
@@ -190,10 +165,21 @@ function MapPageContent() {
             mapRef.current = map;
           }}
         >
+          {userLocation && (
+            <Marker
+              position={userLocation}
+              icon={{
+                url: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+                scaledSize: new google.maps.Size(36, 36),
+              }}
+              title="You are here"
+            />
+          )}
           {stationList.map((station) => (
             <Marker
               key={station.id}
               position={{ lat: station.latitude, lng: station.longitude }}
+              icon={getStationIcon(station.latest_price)}
               onClick={() => setSelectedStation(station)}
             />
           ))}
@@ -253,9 +239,9 @@ function MapPageContent() {
         <div className="fixed bottom-6 right-6 z-50 flex space-x-3">
           <button
             className="px-5 py-2 bg-green-600 text-white rounded-full shadow-lg"
-            onClick={() => setShowForm((v) => !v)}
+            onClick={() => setIsAddStationModalOpen((v) => !v)}
           >
-            {showForm ? "Cancel" : "Add Station"}
+            {isAddStationModalOpen ? "Cancel" : "Add Station"}
           </button>
 
           <button
@@ -267,109 +253,6 @@ function MapPageContent() {
         </div>
       </div>
 
-      {showForm && (
-        <div className="absolute top-16 left-4 z-10 bg-white p-6 rounded-lg shadow-lg w-80">
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <label
-                htmlFor="name"
-                className="block text-gray-800 font-medium mb-1"
-              >
-                Station Name
-              </label>
-              <input
-                id="name"
-                type="text"
-                placeholder="Enter station name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="
-            w-full p-2 border border-gray-300 rounded-lg
-            text-gray-900 placeholder-gray-500 bg-gray-50
-            focus:outline-none focus:ring-2 focus:ring-blue-500
-          "
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label
-                  htmlFor="latitude"
-                  className="block text-gray-800 font-medium mb-1"
-                >
-                  Latitude
-                </label>
-                <input
-                  id="latitude"
-                  type="text"
-                  placeholder="e.g. 40.81"
-                  value={form.latitude}
-                  onChange={(e) =>
-                    setForm({ ...form, latitude: e.target.value })
-                  }
-                  className="
-              w-full p-2 border border-gray-300 rounded-lg
-              text-gray-900 placeholder-gray-500 bg-gray-50
-              focus:outline-none focus:ring-2 focus:ring-blue-500
-            "
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="longitude"
-                  className="block text-gray-800 font-medium mb-1"
-                >
-                  Longitude
-                </label>
-                <input
-                  id="longitude"
-                  type="text"
-                  placeholder="e.g. -73.94"
-                  value={form.longitude}
-                  onChange={(e) =>
-                    setForm({ ...form, longitude: e.target.value })
-                  }
-                  className="
-              w-full p-2 border border-gray-300 rounded-lg
-              text-gray-900 placeholder-gray-500 bg-gray-50
-              focus:outline-none focus:ring-2 focus:ring-blue-500
-            "
-                />
-              </div>
-            </div>
-
-            <div>
-              <label
-                htmlFor="price"
-                className="block text-gray-800 font-medium mb-1"
-              >
-                Price (USD)
-              </label>
-              <input
-                id="price"
-                type="number"
-                step="0.01"
-                placeholder="e.g. 3.45"
-                value={form.price}
-                onChange={(e) => setForm({ ...form, price: e.target.value })}
-                className="
-            w-full p-2 border border-gray-300 rounded-lg
-            text-gray-900 placeholder-gray-500 bg-gray-50
-            focus:outline-none focus:ring-2 focus:ring-blue-500
-          "
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
-            >
-              Add Station
-            </button>
-          </form>
-        </div>
-      )}
-
       {/* Right column: Station list */}
       <div className="w-1/3 h-full bg-white text-gray-900 p-6 overflow-y-auto shadow-lg">
         <input
@@ -379,29 +262,79 @@ function MapPageContent() {
           onChange={(e) => setSearchText(e.target.value)}
           className="w-full p-2 mb-4 border rounded"
         />
-        <ul>
-          {stationList.map((station) => (
-            <li
-              key={station.id}
-              onClick={() => handleStationSelect(station)}
-              className="p-3 mb-2 bg-gray-100 rounded hover:bg-gray-200 cursor-pointer flex justify-between items-center"
-            >
-              <span>{station.name}</span>
-              <span className="text-sm">
-                {(station.distance / 1609.34).toFixed(2)} mi
-              </span>
-            </li>
-          ))}
+
+        <ul className="space-y-2">
+          {stationList.map((station) => {
+            const isActive = selectedStation?.id === station.id;
+            return (
+              <li
+                key={station.id}
+                onClick={() => handleStationSelect(station)}
+                className={`
+            p-3 bg-gray-100 rounded hover:bg-gray-200 cursor-pointer
+            ${isActive ? "ring-2 ring-blue-400" : ""}
+          `}
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-medium">{station.name}</p>
+                    <p className="text-sm text-gray-600">
+                      {station.latest_price != null
+                        ? `$${station.latest_price.toFixed(2)}`
+                        : "No price"}
+                    </p>
+                  </div>
+                  <p className="text-sm">
+                    {(station.distance / 1609.34).toFixed(2)} mi
+                  </p>
+                </div>
+
+                {/* Expand past prices when active */}
+                {isActive && (station.prices?.length ?? 0) > 0 && (
+                  <ul className="mt-2 bg-gray-50 border border-gray-200 rounded p-2 space-y-1">
+                    {station.prices!.slice(0, 5).map((p) => (
+                      <li
+                        key={p.recorded_at}
+                        className="flex justify-between text-sm"
+                      >
+                        <span>${p.price.toFixed(2)}</span>
+                        <span className="text-gray-500">
+                          {new Date(p.recorded_at).toLocaleString()}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </div>
 
       {/* Modals */}
+      <AddStationModal
+        visible={isAddStationModalOpen}
+        onCancel={() => setIsAddStationModalOpen(false)}
+        onSuccess={() => {
+          fetchStations();
+          setIsAddStationModalOpen(false);
+        }}
+      />
+
       <ConfirmPriceModal
         visible={isConfirmModalOpen}
+        stationID={selectedStation?.id ?? -1}
         onClose={() => setIsConfirmModalOpen(false)}
-        onSubmit={(price) => {
-          console.log(`Price confirmed: ${price}`);
+        onSuccess={async () => {
           setIsConfirmModalOpen(false);
+
+          const id = selectedStation?.id;
+          if (id == null) return;
+
+          const updated = await fetchStations();
+
+          const fresh = updated.find((s) => s.id === id);
+          if (fresh) setSelectedStation(fresh);
         }}
       />
 
