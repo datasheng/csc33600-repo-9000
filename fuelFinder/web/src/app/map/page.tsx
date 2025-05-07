@@ -110,7 +110,7 @@ function MapPageContent() {
 
     // 2) Immediately add its price
     const priceRes = await fetch(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}/${newStation.id}/prices`,
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations/${newStation.id}/prices`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
