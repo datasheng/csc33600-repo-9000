@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../../../lib/firebase";
+import { auth } from "../lib/firebase";
 import RedirectIfAuthenticated from "../../../components/RedirectIfAuthenticated";
 
 export default function LoginPage() {
