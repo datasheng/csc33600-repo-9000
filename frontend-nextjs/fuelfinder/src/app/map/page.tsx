@@ -16,25 +16,9 @@ type Station = {
   name: string;
   latitude: number;
   longitude: number;
-  price: string;
+  latest_price?: number | null;
+  recorded_at?: string;
 };
-
-const stations: Station[] = [
-  {
-    id: 1,
-    name: "Shell Gas Station",
-    latitude: 40.81987,
-    longitude: -73.94958,
-    price: "$3.45",
-  },
-  {
-    id: 2,
-    name: "Exxon Mobil",
-    latitude: 40.81734,
-    longitude: -73.94421,
-    price: "$3.39",
-  },
-];
 
 /**
  * Calculates the distance in meters between two coordinates
@@ -73,6 +57,77 @@ function MapPageContent() {
   const [isTripModalOpen, setIsTripModalOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const mapRef = useRef<google.maps.Map | null>(null);
+
+  const [stations, setStations] = useState<Station[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    latitude: "",
+    longitude: "",
+    price: "",
+  });
+
+  // Fetch stations with latest prices
+  const fetchStations = async () => {
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations`
+      );
+      const data: Station[] = await res.json();
+      setStations(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchStations();
+  }, []);
+
+  // handle form submission for adding a new station
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // 1) Create the station
+    const stationRes = await fetch(
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          latitude: parseFloat(form.latitude),
+          longitude: parseFloat(form.longitude),
+        }),
+      }
+    );
+
+    if (!stationRes.ok) {
+      console.error("Failed to create station");
+      return;
+    }
+    const newStation = await stationRes.json();
+
+    // 2) Immediately add its price
+    const priceRes = await fetch(
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/${newStation.id}/prices`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ price: parseFloat(form.price) }),
+      }
+    );
+
+    if (!priceRes.ok) {
+      console.error("Station created but failed to add price");
+      return;
+    }
+
+    // 3) Update UI
+    await fetchStations();
+    setShowForm(false);
+    setForm({ name: "", latitude: "", longitude: "", price: "" });
+  };
 
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
@@ -151,39 +206,169 @@ function MapPageContent() {
               }}
               onCloseClick={() => setSelectedStation(null)}
             >
-              <div className="p-4 w-48">
-                <h3 className="font-semibold text-lg">
+              <div className="p-4 w-60 bg-white rounded-lg shadow-md">
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
                   {selectedStation.name}
                 </h3>
-                <p className="text-sm text-gray-600 mb-2">
-                  Price: {selectedStation.price}
+
+                <p className="text-sm text-gray-800 mb-1">
+                  <span className="font-medium text-gray-900">Price:</span>{" "}
+                  {selectedStation.latest_price != null ? (
+                    <span className="text-green-700">
+                      ${selectedStation.latest_price.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="text-red-600">N/A</span>
+                  )}
                 </p>
-                <button
-                  onClick={() => setIsConfirmModalOpen(true)}
-                  className="mr-2 px-3 py-1 bg-blue-600 text-white rounded"
-                >
-                  Confirm Price
-                </button>
-                <button
-                  onClick={() =>
-                    alert(`${selectedStation.name} saved to favorites.`)
-                  }
-                  className="px-3 py-1 bg-gray-400 text-white rounded"
-                >
-                  Save
-                </button>
+
+                {selectedStation.recorded_at && (
+                  <p className="text-xs text-gray-600 mb-4">
+                    Updated{" "}
+                    {new Date(selectedStation.recorded_at).toLocaleString()}
+                  </p>
+                )}
+
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setIsConfirmModalOpen(true)}
+                    className="flex-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    onClick={() =>
+                      alert(`${selectedStation.name} saved to favorites.`)
+                    }
+                    className="flex-1 px-3 py-1 border border-gray-400 hover:bg-gray-100 text-gray-800 rounded-lg transition"
+                  >
+                    Save
+                  </button>
+                </div>
               </div>
             </InfoWindow>
           )}
         </GoogleMap>
 
-        <button
-          onClick={() => setIsTripModalOpen(true)}
-          className="fixed bottom-6 right-6 z-50 px-5 py-2 bg-blue-600 text-white rounded-full shadow-lg"
-        >
-          Plan Trip
-        </button>
+        <div className="fixed bottom-6 right-6 z-50 flex space-x-3">
+          <button
+            className="px-5 py-2 bg-green-600 text-white rounded-full shadow-lg"
+            onClick={() => setShowForm((v) => !v)}
+          >
+            {showForm ? "Cancel" : "Add Station"}
+          </button>
+
+          <button
+            onClick={() => setIsTripModalOpen(true)}
+            className="px-5 py-2 bg-blue-600 text-white rounded-full shadow-lg"
+          >
+            Plan Trip
+          </button>
+        </div>
       </div>
+
+      {showForm && (
+        <div className="absolute top-16 left-4 z-10 bg-white p-6 rounded-lg shadow-lg w-80">
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label
+                htmlFor="name"
+                className="block text-gray-800 font-medium mb-1"
+              >
+                Station Name
+              </label>
+              <input
+                id="name"
+                type="text"
+                placeholder="Enter station name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="
+            w-full p-2 border border-gray-300 rounded-lg
+            text-gray-900 placeholder-gray-500 bg-gray-50
+            focus:outline-none focus:ring-2 focus:ring-blue-500
+          "
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label
+                  htmlFor="latitude"
+                  className="block text-gray-800 font-medium mb-1"
+                >
+                  Latitude
+                </label>
+                <input
+                  id="latitude"
+                  type="text"
+                  placeholder="e.g. 40.81"
+                  value={form.latitude}
+                  onChange={(e) =>
+                    setForm({ ...form, latitude: e.target.value })
+                  }
+                  className="
+              w-full p-2 border border-gray-300 rounded-lg
+              text-gray-900 placeholder-gray-500 bg-gray-50
+              focus:outline-none focus:ring-2 focus:ring-blue-500
+            "
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="longitude"
+                  className="block text-gray-800 font-medium mb-1"
+                >
+                  Longitude
+                </label>
+                <input
+                  id="longitude"
+                  type="text"
+                  placeholder="e.g. -73.94"
+                  value={form.longitude}
+                  onChange={(e) =>
+                    setForm({ ...form, longitude: e.target.value })
+                  }
+                  className="
+              w-full p-2 border border-gray-300 rounded-lg
+              text-gray-900 placeholder-gray-500 bg-gray-50
+              focus:outline-none focus:ring-2 focus:ring-blue-500
+            "
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="price"
+                className="block text-gray-800 font-medium mb-1"
+              >
+                Price (USD)
+              </label>
+              <input
+                id="price"
+                type="number"
+                step="0.01"
+                placeholder="e.g. 3.45"
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+                className="
+            w-full p-2 border border-gray-300 rounded-lg
+            text-gray-900 placeholder-gray-500 bg-gray-50
+            focus:outline-none focus:ring-2 focus:ring-blue-500
+          "
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
+            >
+              Add Station
+            </button>
+          </form>
+        </div>
+      )}
 
       {/* Right column: Station list */}
       <div className="w-1/3 h-full bg-white text-gray-900 p-6 overflow-y-auto shadow-lg">
