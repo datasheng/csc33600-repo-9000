@@ -1,21 +1,42 @@
-// app/register/page.tsx
 "use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import RedirectIfAuthenticated from "../../../components/RedirectIfAuthenticated";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   const handleRegister = async () => {
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+
+      // ✅ Update Firebase user profile with name
+      await updateProfile(userCredential.user, {
+        displayName: name,
+      });
+
+      // ✅ Force-refresh token and send it + display_name to backend
+      const token = await userCredential.user.getIdToken(true);
+      await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/register-user`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          display_name: name,
+        }),
+      });
+
       router.replace("/map");
     } catch (err: any) {
       setError(err.message);
@@ -29,6 +50,14 @@ export default function RegisterPage() {
           <h1 className="text-3xl text-center font-bold text-blue-500">
             Register
           </h1>
+
+          <input
+            type="text"
+            placeholder="Full Name"
+            className="w-full p-4 bg-gray-900 border border-blue-500 rounded text-white"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
 
           <input
             type="email"

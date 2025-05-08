@@ -26,6 +26,9 @@ export default function Navbar() {
             <Link href="/map" className="hover:text-blue-300">
               Map
             </Link>
+            <Link href="/account" className="hover:text-blue-300">
+              Account
+            </Link>
             <button
               onClick={handleLogout}
               className="text-red-400 hover:text-red-300"
