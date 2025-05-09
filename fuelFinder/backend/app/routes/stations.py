@@ -1,15 +1,20 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
 from app.db.connection import get_db_connection
-
+import math
+import requests
+import os
+from typing import List
+from app.db.connection import get_db_connection
 from app.schemas import (
     StationBase,
     StationOut,
     StationWithPriceOut,
     PriceBase,
     PriceCreatedOut,
+    RoutePlanRequest,
+    RoutePlanResponse,
 )
-
 router = APIRouter()
 
 
@@ -129,4 +134,119 @@ def add_price(station_id: int, p: PriceBase):
         station_id=row[1],
         price=row[2],
         recorded_at=row[3],
+    )
+
+# Kalelo 
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+
+
+# --- Utility: Haversine formula ---
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+# --- Route: Plan route with gas stops ---
+@router.post("/plan-route", response_model=RoutePlanResponse)
+def plan_route(request: RoutePlanRequest):
+    api_key = os.getenv("GOOGLE_MAPS_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Missing Google Maps API key")
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Step 1: Fetch all stations with latest price
+    cur.execute("""
+        SELECT
+            s.id, s.name, s.latitude, s.longitude,
+            (
+              SELECT price FROM prices
+              WHERE station_id = s.id
+              ORDER BY recorded_at DESC LIMIT 1
+            ) AS latest_price
+        FROM stations s
+        WHERE (
+            SELECT price FROM prices WHERE station_id = s.id ORDER BY recorded_at DESC LIMIT 1
+        ) IS NOT NULL;
+    """)
+    rows = cur.fetchall()
+    columns = [col[0] for col in cur.description]
+    stations = [dict(zip(columns, row)) for row in rows]
+    cur.close()
+    conn.close()
+
+    current = (request.current_lat, request.current_lon)
+    dest = (request.destination_lat, request.destination_lon)
+    direct_distance = haversine(*current, *dest)
+
+    # Step 2: Filter stations by detour
+    valid = []
+    for s in stations:
+        station_loc = (s["latitude"], s["longitude"])
+        to_station = haversine(*current, *station_loc)
+        from_station = haversine(*station_loc, *dest)
+        detour = to_station + from_station - direct_distance
+
+        if detour <= request.max_detour_km:
+            valid.append({
+                "id": s["id"],
+                "name": s["name"],
+                "latitude": s["latitude"],
+                "longitude": s["longitude"],
+                "latest_price": s["latest_price"],
+                "detour_km": round(detour, 2),
+                "prices": [],
+                "recorded_at": None,
+            })
+
+    # Step 3: Pick up to N cheapest stations
+    best_stops = sorted(valid, key=lambda x: x["latest_price"])[:request.num_stations]
+
+    # Step 4: Build Directions API call
+    waypoints_str = "|".join([f"{s['latitude']},{s['longitude']}" for s in best_stops])
+    params = {
+        "origin": f"{request.current_lat},{request.current_lon}",
+        "destination": f"{request.destination_lat},{request.destination_lon}",
+        "waypoints": waypoints_str,
+        "key": api_key,
+    }
+
+    url = "https://maps.googleapis.com/maps/api/directions/json"
+    resp = requests.get(url, params=params).json()
+
+    if resp["status"] != "OK":
+        raise HTTPException(status_code=500, detail="Google Directions API failed")
+
+    route = resp["routes"][0]
+    total_distance = sum(leg["distance"]["value"] for leg in route["legs"]) / 1000
+    total_duration = sum(leg["duration"]["value"] for leg in route["legs"]) / 60
+    polyline = route["overview_polyline"]["points"]
+
+    return RoutePlanResponse(
+        route_polyline=polyline,
+        total_distance_km=round(total_distance, 2),
+        total_duration_min=round(total_duration, 1),
+        waypoints=best_stops,
     )
