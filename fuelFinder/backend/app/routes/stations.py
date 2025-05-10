@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from typing import List
 from app.db.connection import get_db_connection
 import math
@@ -250,3 +250,15 @@ def plan_route(request: RoutePlanRequest):
         total_duration_min=round(total_duration, 1),
         waypoints=best_stops,
     )
+
+
+# This will be changed lated should we want to add a populate nearby to 
+# add gas stations to the database. 
+@router.post("/populate-nearby")
+async def populate_nearby(request: Request):
+    """
+    Dummy route that accepts user coordinates and always returns success.
+    """
+    body = await request.json()
+    print("Received /populate-nearby request:", body)
+    return {"status": "ok"}

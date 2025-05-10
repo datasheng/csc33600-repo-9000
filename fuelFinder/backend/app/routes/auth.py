@@ -103,3 +103,51 @@ async def get_current_user_id(
     cur.close()
     conn.close()
     return user_id
+
+
+
+@router.get("/account")
+def get_account_info(user_id: int = Depends(get_current_user_id)):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT email, last_login, is_premium
+        FROM users
+        WHERE id = %s
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
+        raise HTTPException(404, "User not found")
+
+    return {
+        "email": row[0],
+        "last_login": row[1],
+        "plan": "Premium" if row[2] else "Free",
+    }
+
+
+@router.post("/account/toggle-premium")
+def toggle_premium_status(user_id: int = Depends(get_current_user_id)):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE users
+        SET is_premium = NOT is_premium
+        WHERE id = %s
+        RETURNING is_premium
+        """,
+        (user_id,),
+    )
+    new_status = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return {"new_plan": "Premium" if new_status else "Free"}
