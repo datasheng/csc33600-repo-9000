@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import List
+import os
+import requests
 from app.db.connection import get_db_connection
 
 from app.schemas import (
@@ -8,9 +10,15 @@ from app.schemas import (
     StationWithPriceOut,
     PriceBase,
     PriceCreatedOut,
+    LocationIn,              # <— added import
 )
 
 router = APIRouter()
+
+# Google Places API config
+GOOGLE_PLACES_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+_places = os.getenv("GOOGLE_MAPS_API_KEY")
 
 
 # Create a station
@@ -38,6 +46,7 @@ def create_station(s: StationBase):
 def list_stations():
     conn = get_db_connection()
     cur = conn.cursor()
+
     cur.execute(
         """
         SELECT
@@ -45,7 +54,6 @@ def list_stations():
             s.name,
             s.latitude,
             s.longitude,
-            -- latest single price
             (
               SELECT price
               FROM prices
@@ -60,7 +68,6 @@ def list_stations():
               ORDER BY recorded_at DESC
               LIMIT 1
             ) AS recorded_at,
-            -- full price history as JSON array
             COALESCE(
               (
                 SELECT JSON_AGG(
@@ -79,24 +86,27 @@ def list_stations():
         ORDER BY s.id;
     """
     )
+
     rows = cur.fetchall()
-    # build a list of column names in order
     columns = [col[0] for col in cur.description]
-    result = []
+    result: List[StationWithPriceOut] = []
+
     for row in rows:
-        # zip together names and values into a dict
         row_dict = dict(zip(columns, row))
         result.append(
-            {
-                "id": row_dict["id"],
-                "name": row_dict["name"],
-                "latitude": row_dict["latitude"],
-                "longitude": row_dict["longitude"],
-                "latest_price": row_dict["latest_price"],
-                "recorded_at": row_dict["recorded_at"],
-                "prices": row_dict["prices"],
-            }
+            StationWithPriceOut(
+                id=row_dict["id"],
+                name=row_dict["name"],
+                latitude=row_dict["latitude"],
+                longitude=row_dict["longitude"],
+                latest_price=row_dict["latest_price"],
+                recorded_at=row_dict["recorded_at"],
+                prices=row_dict["prices"],         # <— include the JSON prices array
+            )
         )
+
+    cur.close()
+    conn.close()
     return result
 
 
@@ -105,7 +115,6 @@ def list_stations():
 def add_price(station_id: int, p: PriceBase):
     conn = get_db_connection()
     cur = conn.cursor()
-    # ensure station exists
     cur.execute("SELECT 1 FROM stations WHERE id = %s", (station_id,))
     if cur.fetchone() is None:
         cur.close()
@@ -130,3 +139,57 @@ def add_price(station_id: int, p: PriceBase):
         price=row[2],
         recorded_at=row[3],
     )
+
+
+# Populate DB on demand from Google Places, per-user freshness
+@router.post("/populate-nearby", response_model=List[StationOut])
+def populate_nearby(loc: LocationIn):
+    """Fetch nearby gas stations from Google, insert any new ones, and return all."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # call Google Places API
+    resp = requests.get(
+        GOOGLE_PLACES_URL,
+        params={
+            "key": API_KEY,
+            "location": f"{loc.latitude},{loc.longitude}",
+            "radius": 5000,
+            "type": "gas_station",
+        },
+    )
+    places = resp.json().get("results", [])
+
+    inserted: List[StationOut] = []
+    for p in places:
+        name = p["name"]
+        lat = p["geometry"]["location"]["lat"]
+        lng = p["geometry"]["location"]["lng"]
+        try:
+            cur.execute(
+                """
+                INSERT INTO stations (name, latitude, longitude)
+                VALUES (%s, %s, %s)
+                RETURNING id, name, latitude, longitude
+                """,
+                (name, lat, lng),
+            )
+            row = cur.fetchone()
+        except Exception:
+            # likely a duplicate, roll back and select existing
+            conn.rollback()
+            cur.execute(
+                "SELECT id, name, latitude, longitude FROM stations WHERE latitude = %s AND longitude = %s",
+                (lat, lng),
+            )
+            row = cur.fetchone()
+
+        if row:
+            inserted.append(
+                StationOut(id=row[0], name=row[1], latitude=row[2], longitude=row[3])
+            )
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return inserted

@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
-
 # Pydantic schemas
 class StationBase(BaseModel):
     name: str
@@ -18,12 +17,14 @@ class PriceHistoryItem(BaseModel):
     recorded_at: datetime
 
 
-class StationWithPriceOut(StationBase):
+class StationWithPriceOut(BaseModel):
     id: int
+    name: str
+    latitude: float
+    longitude: float
     latest_price: Optional[float]
     recorded_at: Optional[datetime]
-    prices: List[PriceHistoryItem]
-
+    prices: List[dict]
 
 class PriceBase(BaseModel):
     price: float
@@ -33,3 +34,8 @@ class PriceCreatedOut(PriceBase):
     id: int
     station_id: int
     recorded_at: datetime
+
+
+class LocationIn(BaseModel):
+    latitude: float
+    longitude: float
