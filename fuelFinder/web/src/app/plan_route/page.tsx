@@ -48,44 +48,59 @@ export default function TripPlannerPage() {
     const [currentLat, currentLng] = current.split(",").map(parseFloat);
     const [destLat, destLng] = destination.split(",").map(parseFloat);
 
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations/plan-route`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          current_lat: currentLat,
-          current_lon: currentLng,
-          destination_lat: destLat,
-          destination_lon: destLng,
-          max_detour_km: 20,
-          num_stations: 3,
-        }),
-      }
-    );
-
-    const data = await res.json();
-    setStations(data.waypoints);
-
-    const DirectionsService = new google.maps.DirectionsService();
-    DirectionsService.route(
-      {
-        origin: { lat: currentLat, lng: currentLng },
-        destination: { lat: destLat, lng: destLng },
-        waypoints: data.waypoints.map((wp: Station) => ({
-          location: { lat: wp.latitude, lng: wp.longitude },
-          stopover: true,
-        })),
-        travelMode: google.maps.TravelMode.DRIVING,
-      },
-      (result, status) => {
-        if (status === google.maps.DirectionsStatus.OK && result) {
-          setDirections(result);
-        } else {
-          console.error("Directions request failed", result);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations/plan-route`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            current_lat: currentLat,
+            current_lon: currentLng,
+            destination_lat: destLat,
+            destination_lon: destLng,
+            max_detour_km: 20,
+            num_stations: 3,
+          }),
         }
+      );
+
+      if (!res.ok) {
+        console.error("Failed to fetch route:", await res.text());
+        return;
       }
-    );
+
+      const data = await res.json();
+
+      if (!data || !Array.isArray(data.waypoints)) {
+        console.error("Invalid response format:", data);
+        return;
+      }
+
+      setStations(data.waypoints);
+
+      const DirectionsService = new google.maps.DirectionsService();
+      DirectionsService.route(
+        {
+          origin: { lat: currentLat, lng: currentLng },
+          destination: { lat: destLat, lng: destLng },
+          waypoints: data.waypoints.map((wp: Station) => ({
+            location: { lat: wp.latitude, lng: wp.longitude },
+            stopover: true,
+          })),
+          travelMode: google.maps.TravelMode.DRIVING,
+        },
+        (result, status) => {
+          if (status === google.maps.DirectionsStatus.OK && result) {
+            setDirections(result);
+          } else {
+            console.error("Directions request failed", result);
+          }
+        }
+      );
+    } catch (error) {
+      console.error("An error occurred while planning the route:", error);
+    }
   };
 
   if (!isLoaded || !current) return <div>Loading map...</div>;
