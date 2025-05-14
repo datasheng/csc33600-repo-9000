@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, stations, favorites
+from app.routes import auth, stations, favorites, traffic
 
 app = FastAPI()
 
@@ -17,3 +17,4 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(stations.router, prefix="/stations", tags=["stations"])
 app.include_router(favorites.router, prefix="/favorites", tags=["favorites"])
+app.include_router(traffic.router, prefix="/traffic", tags=["traffic"])

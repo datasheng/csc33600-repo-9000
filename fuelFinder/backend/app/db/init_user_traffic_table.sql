@@ -1,0 +1,8 @@
+CREATE TABLE
+    IF NOT EXISTS user_traffic (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        latitude DOUBLE PRECISION NOT NULL,
+        longitude DOUBLE PRECISION NOT NULL,
+        recorded_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
