@@ -7,6 +7,7 @@ import {
   InfoWindow,
   useLoadScript,
 } from "@react-google-maps/api";
+import { useRouter } from "next/navigation";
 import ConfirmPriceModal from "../../../components/Modals/ConfirmPriceModal";
 import TripPlannerModal from "../../../components/Modals/TripPlannerModal";
 import ProtectedRoute from "../../../components/ProtectedRoute";
@@ -45,6 +46,8 @@ const calculateDistance = (
 };
 
 function MapPageContent() {
+  const router = useRouter();
+
   const [userLocation, setUserLocation] =
     useState<google.maps.LatLngLiteral | null>(null);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
@@ -388,7 +391,7 @@ function MapPageContent() {
           </button>
 
           <button
-            onClick={() => setIsTripModalOpen(true)}
+            onClick={() => router.push("/plan_route")}
             className="px-5 py-2 bg-blue-600 text-white rounded-full shadow-lg"
           >
             Plan Trip

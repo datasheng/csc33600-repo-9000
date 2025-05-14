@@ -17,11 +17,17 @@ interface Station {
 export default function TripPlannerPage() {
   const [current, setCurrent] = useState<string | null>(null);
   const [destination, setDestination] = useState<string>("Statue of Liberty");
-  const [resolvedDestination, setResolvedDestination] = useState<string | null>(null);
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
+  const [resolvedDestination, setResolvedDestination] = useState<string | null>(
+    null
+  );
+  const [directions, setDirections] =
+    useState<google.maps.DirectionsResult | null>(null);
   const [stations, setStations] = useState<Station[]>([]);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const [mapCenter, setMapCenter] = useState<google.maps.LatLngLiteral>({ lat: 40.7306, lng: -73.9352 });
+  const [mapCenter, setMapCenter] = useState<google.maps.LatLngLiteral>({
+    lat: 40.7306,
+    lng: -73.9352,
+  });
 
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
@@ -36,14 +42,16 @@ export default function TripPlannerPage() {
         setMapCenter({ lat: coords.latitude, lng: coords.longitude });
       },
       () => {
-        const fallback = "40.7306,-73.9352";
+        const fallback = "40.81987,-73.94958";
         setCurrent(fallback);
-        setMapCenter({ lat: 40.7306, lng: -73.9352 });
+        setMapCenter({ lat: 40.81987, lng: -73.94958 });
       }
     );
   }, []);
 
-  const getCoordinatesFromPlace = async (place: string): Promise<string | null> => {
+  const getCoordinatesFromPlace = async (
+    place: string
+  ): Promise<string | null> => {
     const response = await fetch(
       `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
         place
