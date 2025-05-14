@@ -58,7 +58,6 @@ export default function StationDetailPage() {
     setFeedbackLoading(true);
     setSentiment(null);
     try {
-       
       const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/stations/station-sentiment`, {
         method: "post",
         headers: {
@@ -82,85 +81,115 @@ export default function StationDetailPage() {
   };
 
   if (loading || !isLoaded)
-    return <div className="p-6">Loading station info...</div>;
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-100">
+        <p className="text-lg text-gray-600 animate-pulse">Loading station info...</p>
+      </div>
+    );
 
   if (!station)
-    return <div className="p-6 text-red-600">Station not found.</div>;
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-100">
+        <p className="text-lg text-red-600">Station not found.</p>
+      </div>
+    );
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6 ">
-      <Link href="/" className="text-blue-600 underline hover:text-blue-800">
-        ← Back to Map
-      </Link>
-
-      <div className="bg-white p-6 rounded-xl shadow-md">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">{station.name}</h1>
-        <p className="text-gray-600 mb-4">
-          Coordinates: ({station.latitude.toFixed(5)}, {station.longitude.toFixed(5)})
-        </p>
-
-        <div className="w-full h-72 rounded-lg mb-6">
-          <GoogleMap
-            mapContainerClassName="w-full h-full"
-            center={{ lat: station.latitude, lng: station.longitude }}
-            zoom={15}
-            options={{ disableDefaultUI: true }}
+    <div className="min-h-screen bg-gray-100">
+      {/* Sticky Header */}
+      <header className="sticky top-0 z-10 bg-white shadow-sm">
+        <div className="max-w-5xl mx-auto px-6 py-4">
+          <Link
+            href="/map"
+            className="text-blue-600 hover:text-blue-800 font-medium transition-colors duration-200"
           >
-            <Marker position={{ lat: station.latitude, lng: station.longitude }} />
-          </GoogleMap>
+            ← Back to Map
+          </Link>
         </div>
+      </header>
 
-        <div className="bg-gray-100 p-4 rounded-md mb-6">
-          <h2 className="text-xl font-semibold mb-2">Latest Price</h2>
-          {station.latest_price != null ? (
-            <p className="text-lg">
-              <span className="font-medium text-green-600">
-                ${station.latest_price.toFixed(2)}
-              </span>{" "}
-              <span className="text-sm text-gray-500">
-                (Recorded on {new Date(station.recorded_at!).toLocaleString()})
-              </span>
-            </p>
-          ) : (
-            <p className="italic text-gray-500">No recent price data.</p>
-          )}
-        </div>
+      {/* Scrollable Content */}
+      <div className="max-w-5xl mx-auto px-6 py-8 overflow-y-auto h-[calc(100vh-80px)] scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+        <div className="bg-white p-6 rounded-xl shadow-lg space-y-6 transform transition-all duration-300 hover:shadow-xl">
+          <h1 className="text-3xl font-bold text-gray-800">{station.name}</h1>
+          <p className="text-gray-600">
+            Coordinates: ({station.latitude.toFixed(5)}, {station.longitude.toFixed(5)})
+          </p>
 
-        <div className="bg-gray-100 p-4 rounded-md mb-4">
-          <h2 className="text-xl font-semibold mb-3">Price History</h2>
-          {station.prices.length > 0 ? (
-            <ul className="divide-y divide-gray-200">
-              {station.prices.slice(0, 10).map((item, idx) => (
-                <li key={idx} className="py-2 flex justify-between text-sm">
-                  <span>${item.price.toFixed(2)}</span>
-                  <span className="text-gray-500">
-                    {new Date(item.recorded_at).toLocaleString()}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="italic text-gray-500">No historical prices recorded.</p>
-          )}
-        </div>
-
-        <div className="mb-4">
-          <button
-            onClick={fetchFeedback}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md"
-            disabled={feedbackLoading}
-          >
-            {feedbackLoading ? "Analyzing..." : "Client Feedback"}
-          </button>
-        </div>
-
-        {feedbackLoading && <p className="text-sm italic text-gray-500">Fetching and analyzing feedback...</p>}
-        {sentiment && (
-          <div className="bg-blue-50 p-4 rounded-md border border-blue-200 mb-32">
-            <h3 className="font-semibold mb-2">Sentiment Summary</h3>
-            <p>{sentiment}</p>
+          <div className="w-full h-80 rounded-lg overflow-hidden">
+            <GoogleMap
+              mapContainerClassName="w-full h-full"
+              center={{ lat: station.latitude, lng: station.longitude }}
+              zoom={15}
+              options={{ disableDefaultUI: true }}
+            >
+              <Marker position={{ lat: station.latitude, lng: station.longitude }} />
+            </GoogleMap>
           </div>
-        )}
+
+          <div className="bg-gray-50 p-5 rounded-lg">
+            <h2  className="text-xl font-semibold mb-2">Latest Price</h2>
+            {station.latest_price != null ? (
+              <p className="text-lg">
+                <span className="font-medium text-green-600">
+                  ${station.latest_price.toFixed(2)}
+                </span>{" "}
+                <span className="text-sm text-gray-500">
+                  (Recorded on {new Date(station.recorded_at!).toLocaleString()})
+                </span>
+              </p>
+            ) : (
+              <p className="italic text-gray-500">No recent price data.</p>
+            )}
+          </div>
+
+          <div className="bg-gray-50 p-5 rounded-lg">
+            <h2 className="text-xl font-semibold mb-3">Price History</h2>
+            {station.prices.length > 0 ? (
+              <ul className="divide-y divide-gray-200">
+                {station.prices.slice(0, 10).map((item, idx) => (
+                  <li
+                    key={idx}
+                    className="py-3 flex justify-between text-sm hover:bg-gray-100 transition-colors duration-150"
+                  >
+                    <span>${item.price.toFixed(2)}</span>
+                    <span className="text-gray-500">
+                      {new Date(item.recorded_at).toLocaleString()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="italic text-gray-500">No historical prices recorded.</p>
+            )}
+          </div>
+
+          <div>
+            <button
+              onClick={fetchFeedback}
+              className={`px-4 py-2 rounded-md text-white font-medium transition-all duration-200 ${
+                feedbackLoading
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-blue-600 hover:bg-blue-700"
+              }`}
+              disabled={feedbackLoading}
+            >
+              {feedbackLoading ? "Analyzing..." : "Client Feedback"}
+            </button>
+          </div>
+
+          {feedbackLoading && (
+            <p className="text-sm italic text-gray-500 animate-pulse">
+              Fetching and analyzing feedback...
+            </p>
+          )}
+          {sentiment && (
+            <div className="bg-blue-50 p-5 rounded-lg border border-blue-200">
+              <h3 className="font-semibold mb-2">Sentiment Summary</h3>
+              <p className="text-gray-700">{sentiment}</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
