@@ -15,6 +15,7 @@ import AddStationModal from "../../../components/Modals/AddStationModal";
 import StationInfoWindow from "../../../components/StationInfoWindow";
 import { auth } from "../lib/firebase";
 import { Station } from "../../../schemas/station";
+import Link from "next/link";
 
 /**
  * Calculates the distance in meters between two coordinates
@@ -349,7 +350,11 @@ function MapPageContent() {
                 >
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="font-medium">{station.name}</p>
+                    <div className="flex flex-row justify-between w-96">
+                    <p className="font-medium">{station.name}</p>
+                    <Link href={`/station-detail/${station.id}`}  className="text-blue-500">See Details</Link>
+                    </div>
+                      
                       <p className="text-sm text-gray-600">
                         {station.latest_price != null
                           ? `$${station.latest_price.toFixed(2)}`
