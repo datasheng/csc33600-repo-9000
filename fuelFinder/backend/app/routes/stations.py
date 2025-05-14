@@ -15,27 +15,44 @@ from app.schemas import (
     RoutePlanRequest,
     RoutePlanResponse,
 )
+
 router = APIRouter()
 
 
 # Create a station
+from fastapi import APIRouter, HTTPException
+from psycopg2 import IntegrityError
+from app.db.connection import get_db_connection
+from app.schemas import StationBase, StationOut
+
+router = APIRouter()
+
+
 @router.post("/", response_model=StationOut, status_code=201)
 def create_station(s: StationBase):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO stations (name, latitude, longitude)
-        VALUES (%s, %s, %s)
-        RETURNING id, name, latitude, longitude
-        """,
-        (s.name, s.latitude, s.longitude),
-    )
-    row = cur.fetchone()
-    conn.commit()
-    cur.close()
-    conn.close()
-    return StationOut(id=row[0], name=row[1], latitude=row[2], longitude=row[3])
+    try:
+        cur.execute(
+            """
+            INSERT INTO stations (name, latitude, longitude)
+            VALUES (%s, %s, %s)
+            RETURNING id, name, latitude, longitude
+            """,
+            (s.name, s.latitude, s.longitude),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return StationOut(id=row[0], name=row[1], latitude=row[2], longitude=row[3])
+    except IntegrityError:
+        conn.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="A station with the same latitude and longitude already exists.",
+        )
+    finally:
+        cur.close()
+        conn.close()
 
 
 # List all stations with their most recent price (if any)
@@ -136,7 +153,9 @@ def add_price(station_id: int, p: PriceBase):
         recorded_at=row[3],
     )
 
-# Kalelo 
+
+# Kalelo
+
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371
@@ -150,7 +169,6 @@ def haversine(lat1, lon1, lat2, lon2):
     )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
-
 
 
 # --- Utility: Haversine formula ---
@@ -167,6 +185,7 @@ def haversine(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
+
 # --- Route: Plan route with gas stops ---
 @router.post("/plan-route", response_model=RoutePlanResponse)
 def plan_route(request: RoutePlanRequest):
@@ -178,7 +197,8 @@ def plan_route(request: RoutePlanRequest):
     cur = conn.cursor()
 
     # Step 1: Fetch all stations with latest price
-    cur.execute("""
+    cur.execute(
+        """
         SELECT
             s.id, s.name, s.latitude, s.longitude,
             (
@@ -190,7 +210,8 @@ def plan_route(request: RoutePlanRequest):
         WHERE (
             SELECT price FROM prices WHERE station_id = s.id ORDER BY recorded_at DESC LIMIT 1
         ) IS NOT NULL;
-    """)
+    """
+    )
     rows = cur.fetchall()
     columns = [col[0] for col in cur.description]
     stations = [dict(zip(columns, row)) for row in rows]
@@ -210,19 +231,21 @@ def plan_route(request: RoutePlanRequest):
         detour = to_station + from_station - direct_distance
 
         if detour <= request.max_detour_km:
-            valid.append({
-                "id": s["id"],
-                "name": s["name"],
-                "latitude": s["latitude"],
-                "longitude": s["longitude"],
-                "latest_price": s["latest_price"],
-                "detour_km": round(detour, 2),
-                "prices": [],
-                "recorded_at": None,
-            })
+            valid.append(
+                {
+                    "id": s["id"],
+                    "name": s["name"],
+                    "latitude": s["latitude"],
+                    "longitude": s["longitude"],
+                    "latest_price": s["latest_price"],
+                    "detour_km": round(detour, 2),
+                    "prices": [],
+                    "recorded_at": None,
+                }
+            )
 
     # Step 3: Pick up to N cheapest stations
-    best_stops = sorted(valid, key=lambda x: x["latest_price"])[:request.num_stations]
+    best_stops = sorted(valid, key=lambda x: x["latest_price"])[: request.num_stations]
 
     # Step 4: Build Directions API call
     waypoints_str = "|".join([f"{s['latitude']},{s['longitude']}" for s in best_stops])
@@ -252,8 +275,8 @@ def plan_route(request: RoutePlanRequest):
     )
 
 
-# This will be changed lated should we want to add a populate nearby to 
-# add gas stations to the database. 
+# This will be changed lated should we want to add a populate nearby to
+# add gas stations to the database.
 @router.post("/populate-nearby")
 async def populate_nearby(request: Request):
     """
