@@ -18,10 +18,12 @@ def run_sql_file(fname: str):
 
 if __name__ == "__main__":
     for script in [
-        "init_users_table.sql",
-        "init_stations_table.sql",
-        "init_prices_table.sql",
-        "init_favorites_table.sql",
+        "init_tables.sql",
+        # "init_users_table.sql",
+        # "init_stations_table.sql",
+        # "init_prices_table.sql",
+        # "init_favorites_table.sql",
+        # "init_user_traffic_table.sql",
     ]:
         try:
             run_sql_file(script)

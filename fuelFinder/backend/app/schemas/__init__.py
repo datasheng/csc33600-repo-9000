@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
 
+
 # Pydantic schemas
 class StationBase(BaseModel):
     name: str
@@ -57,3 +58,8 @@ class RoutePlanResponse(BaseModel):
     total_distance_km: float
     total_duration_min: float
     waypoints: List[StationWithPriceOut]
+
+
+class TrafficLog(BaseModel):
+    latitude: float
+    longitude: float

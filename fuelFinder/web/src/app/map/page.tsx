@@ -114,6 +114,41 @@ function MapPageContent() {
     }
   };
 
+  useEffect(() => {
+    const reportUserLocation = async (lat: number, lng: number) => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const token = await user.getIdToken(/* forceRefresh= */ true);
+
+        await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/traffic`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ latitude: lat, longitude: lng }),
+        });
+      } catch (err) {
+        console.error("Failed to report user location:", err);
+      }
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const loc = { lat: coords.latitude, lng: coords.longitude };
+        setUserLocation(loc);
+        reportUserLocation(loc.lat, loc.lng);
+      },
+      () => {
+        const fallback = { lat: 40.81987, lng: -73.94958 };
+        setUserLocation(fallback);
+        reportUserLocation(fallback.lat, fallback.lng);
+      }
+    );
+  }, []);
+
   const getStationIcon = (price?: number | null): google.maps.Icon => {
     // choose green if under $3.50, yellow if between, red if expensive
     const color =
