@@ -7,6 +7,8 @@ import {
   DirectionsRenderer,
   useLoadScript,
 } from "@react-google-maps/api";
+import { useAuth } from "../lib/auth";
+import AdBanner from "../../../components/AdBanner";
 
 interface Station {
   latitude: number;
@@ -15,6 +17,12 @@ interface Station {
 }
 
 export default function TripPlannerPage() {
+  // auth & plan state
+  const { user, loading: authLoading } = useAuth();
+  const [plan, setPlan] = useState<"Free" | "Premium" | null>(null);
+  const [showAd, setShowAd] = useState(false);
+
+  // map & route state
   const [current, setCurrent] = useState<string | null>(null);
   const [destination, setDestination] = useState<string>("Statue of Liberty");
   const [resolvedDestination, setResolvedDestination] = useState<string | null>(
@@ -29,11 +37,32 @@ export default function TripPlannerPage() {
     lng: -73.9352,
   });
 
+  // load Google Maps script
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
     libraries: ["places"],
   });
 
+  // 1️⃣ Fetch plan
+  useEffect(() => {
+    if (authLoading || !user) return;
+    (async () => {
+      const token = await user.getIdToken();
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/account`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) {
+        console.error("Could not fetch plan");
+        return;
+      }
+      const { plan } = (await res.json()) as { plan: "Free" | "Premium" };
+      setPlan(plan);
+      if (plan === "Free") setShowAd(true);
+    })();
+  }, [authLoading, user]);
+
+  // 2️⃣ Geolocate user
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
@@ -49,22 +78,22 @@ export default function TripPlannerPage() {
     );
   }, []);
 
+  // 3️⃣ Helpers
   const getCoordinatesFromPlace = async (
     place: string
   ): Promise<string | null> => {
-    const response = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-        place
-      )}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?` +
+        `address=${encodeURIComponent(place)}` +
+        `&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`
     );
-    const data = await response.json();
-    if (data.status === "OK" && data.results.length > 0) {
+    const data = await res.json();
+    if (data.status === "OK" && data.results.length) {
       const { lat, lng } = data.results[0].geometry.location;
       return `${lat},${lng}`;
-    } else {
-      console.error("Failed to geocode place:", data);
-      return null;
     }
+    console.error("Geocode failed:", data);
+    return null;
   };
 
   const handlePlanRoute = async () => {
@@ -73,125 +102,118 @@ export default function TripPlannerPage() {
     const destinationCoords = destination.includes(",")
       ? destination
       : await getCoordinatesFromPlace(destination);
-
     if (!destinationCoords) return;
 
     setResolvedDestination(destinationCoords);
+    const [curLat, curLng] = current.split(",").map(parseFloat);
+    const [dstLat, dstLng] = destinationCoords.split(",").map(parseFloat);
 
-    const [currentLat, currentLng] = current.split(",").map(parseFloat);
-    const [destLat, destLng] = destinationCoords.split(",").map(parseFloat);
-
-    try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations/plan-route`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            current_lat: currentLat,
-            current_lon: currentLng,
-            destination_lat: destLat,
-            destination_lon: destLng,
-            max_detour_km: 20,
-            num_stations: 3,
-          }),
-        }
-      );
-
-      if (!res.ok) {
-        console.error("Failed to fetch route:", await res.text());
-        return;
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/stations/plan-route`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_lat: curLat,
+          current_lon: curLng,
+          destination_lat: dstLat,
+          destination_lon: dstLng,
+          max_detour_km: 20,
+          num_stations: 3,
+        }),
       }
-
-      const data = await res.json();
-
-      if (!data || !Array.isArray(data.waypoints)) {
-        console.error("Invalid response format:", data);
-        return;
-      }
-
-      setStations(data.waypoints);
-
-      const DirectionsService = new google.maps.DirectionsService();
-      DirectionsService.route(
-        {
-          origin: { lat: currentLat, lng: currentLng },
-          destination: { lat: destLat, lng: destLng },
-          waypoints: data.waypoints.map((wp: Station) => ({
-            location: { lat: wp.latitude, lng: wp.longitude },
-            stopover: true,
-          })),
-          travelMode: google.maps.TravelMode.DRIVING,
-        },
-        (result, status) => {
-          if (status === google.maps.DirectionsStatus.OK && result) {
-            setDirections(result);
-          } else {
-            console.error("Directions request failed", result);
-          }
-        }
-      );
-    } catch (error) {
-      console.error("An error occurred while planning the route:", error);
+    );
+    if (!res.ok) {
+      console.error("Route planner error:", await res.text());
+      return;
     }
+    const data = await res.json();
+    if (!data.waypoints) {
+      console.error("Bad waypoints:", data);
+      return;
+    }
+    setStations(data.waypoints);
+
+    new google.maps.DirectionsService().route(
+      {
+        origin: { lat: curLat, lng: curLng },
+        destination: { lat: dstLat, lng: dstLng },
+        waypoints: data.waypoints.map((wp: Station) => ({
+          location: { lat: wp.latitude, lng: wp.longitude },
+          stopover: true,
+        })),
+        travelMode: google.maps.TravelMode.DRIVING,
+      },
+      (result, status) => {
+        if (status === "OK" && result) setDirections(result);
+        else console.error("Directions failed:", status, result);
+      }
+    );
   };
 
   const generateGoogleMapsUrl = (
     origin: string,
     destination: string,
     waypoints: Station[]
-  ): string => {
+  ) => {
     const base = "https://www.google.com/maps/dir/?api=1";
-    const originParam = `origin=${encodeURIComponent(origin)}`;
-    const destinationParam = `destination=${encodeURIComponent(destination)}`;
-
-    const waypointParam =
-      waypoints.length > 0
-        ? `&waypoints=${encodeURIComponent(
-            waypoints.map((wp) => `${wp.latitude},${wp.longitude}`).join("|")
-          )}`
-        : "";
-
-    const travelMode = `&travelmode=driving`;
-
-    return `${base}&${originParam}&${destinationParam}${waypointParam}${travelMode}`;
+    const o = `origin=${encodeURIComponent(origin)}`;
+    const d = `destination=${encodeURIComponent(destination)}`;
+    const w = waypoints.length
+      ? `&waypoints=${encodeURIComponent(
+          waypoints.map((wp) => `${wp.latitude},${wp.longitude}`).join("|")
+        )}`
+      : "";
+    return `${base}&${o}&${d}${w}&travelmode=driving`;
   };
 
-  if (!isLoaded || !current) return <div>Loading map...</div>;
+  // ─── RENDER ───────────────────────────────────────────────────────────────────
 
+  // loading guard
+  if (authLoading || !isLoaded || !current || plan === null) {
+    return (
+      <div className="flex items-center justify-center h-screen">Loading…</div>
+    );
+  }
+
+  // show ad for Free users
+  if (showAd) {
+    return <AdBanner onDone={() => setShowAd(false)} />;
+  }
+
+  // main UI
   return (
     <div className="flex flex-col items-center p-4 space-y-4 h-screen pb-14">
-      <div className="flex flex-col space-y-2 w-full max-w-md">
+      <div className="w-full max-w-md space-y-2">
         <input
           value={destination}
           onChange={(e) => setDestination(e.target.value)}
-          className="p-2 border rounded"
-          placeholder="Enter destination name or coordinates"
+          className="w-full p-2 border rounded"
+          placeholder="Destination name or coords"
         />
         <button
           onClick={handlePlanRoute}
-          className="p-2 bg-blue-600 text-white rounded shadow"
+          className="w-full p-2 bg-blue-600 text-white rounded shadow"
         >
           Plan Route
         </button>
       </div>
 
-      <div className="w-full h-full flex-1">
+      <div className="w-full flex-1">
         <GoogleMap
           mapContainerClassName="w-full h-full"
-          zoom={12}
           center={mapCenter}
+          zoom={12}
           onLoad={(map) => {
             mapRef.current = map;
           }}
         >
           {directions && <DirectionsRenderer directions={directions} />}
-
-          {stations.map((station, idx) => (
+          {stations.map((s, i) => (
             <Marker
-              key={idx}
-              position={{ lat: station.latitude, lng: station.longitude }}
-              label={(idx + 1).toString()}
+              key={i}
+              position={{ lat: s.latitude, lng: s.longitude }}
+              label={`${i + 1}`}
             />
           ))}
         </GoogleMap>
@@ -202,7 +224,7 @@ export default function TripPlannerPage() {
           href={generateGoogleMapsUrl(current, resolvedDestination, stations)}
           target="_blank"
           rel="noopener noreferrer"
-          className="mb-10 inline-block px-4 py-2 bg-green-600 text-white rounded shadow"
+          className="mt-auto mb-4 px-4 py-2 bg-green-600 text-white rounded"
         >
           Open in Google Maps
         </a>
