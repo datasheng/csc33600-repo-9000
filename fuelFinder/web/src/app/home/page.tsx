@@ -53,14 +53,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-blue-50 p-6 relative flex items-center justify-center">
-      {/* Account button in top-right corner */}
-      <button
-        onClick={() => router.push("/account")}
-        className="absolute top-6 right-6 text-blue-700 hover:text-blue-900 font-semibold"
-      >
-        Account
-      </button>
-
       <div className="text-center space-y-6">
         <h1 className="text-4xl font-bold text-blue-700">Fuel Finder</h1>
         <p className="text-blue-600 text-base max-w-md mx-auto">
