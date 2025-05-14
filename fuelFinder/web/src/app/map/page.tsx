@@ -156,12 +156,14 @@ function MapPageContent() {
     // choose green if under $3.50, yellow if between, red if expensive
     const color =
       price == null
-        ? "grey"
-        : price < 3.5
-        ? "green"
-        : price < 4.0
-        ? "yellow"
-        : "red";
+        ? "purple"
+        : price < 3.75
+        ? "green" // Cheap for NYC
+        : price < 4.15
+        ? "yellow" // Moderate
+        : price < 4.5
+        ? "orange" // High
+        : "red"; // Very high
 
     return {
       url: `http://maps.google.com/mapfiles/ms/icons/${color}-dot.png`,

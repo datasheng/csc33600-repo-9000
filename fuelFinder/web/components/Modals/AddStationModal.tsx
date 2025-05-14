@@ -23,6 +23,16 @@ const AddStationModal: React.FC<AddStationModalProps> = ({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (
+      form.name === "" ||
+      form.latitude === "" ||
+      form.longitude === "" ||
+      form.price === ""
+    ) {
+      alert("Please fill in all fields");
+      return;
+    }
+
     try {
       // 1) Create the station
       const stationRes = await fetch(
