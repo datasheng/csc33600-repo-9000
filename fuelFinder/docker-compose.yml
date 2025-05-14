@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  backend:
+    image: momo205/fuelfinder-backend:latest
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  web:
+    image: momo205/fuelfinder-web:latest
+    env_file:
+      - ./web/.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    env_file:
+      - ./backend/.env
+    ports:
+      - "5432:5432"
+
+volumes:
+  db_data:
