@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Query
 from typing import List
 from app.db.connection import get_db_connection
 import math
 import requests
 import os
+import openai
 from typing import List
 from app.db.connection import get_db_connection
 from app.schemas import (
@@ -14,18 +15,14 @@ from app.schemas import (
     PriceCreatedOut,
     RoutePlanRequest,
     RoutePlanResponse,
+    FeedbackRequest
 )
 
 router = APIRouter()
 
 
 # Create a station
-from fastapi import APIRouter, HTTPException
 from psycopg2 import IntegrityError
-from app.db.connection import get_db_connection
-from app.schemas import StationBase, StationOut
-
-router = APIRouter()
 
 
 @router.post("/", response_model=StationOut, status_code=201)
@@ -285,3 +282,117 @@ async def populate_nearby(request: Request):
     body = await request.json()
     print("Received /populate-nearby request:", body)
     return {"status": "ok"}
+
+
+
+# get info on a single station
+@router.get("/{station_id}", response_model=StationWithPriceOut)
+def get_station_by_id(station_id: int):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT
+            s.id,
+            s.name,
+            s.latitude,
+            s.longitude,
+            (
+              SELECT price FROM prices WHERE station_id = s.id ORDER BY recorded_at DESC LIMIT 1
+            ) AS latest_price,
+            (
+              SELECT recorded_at FROM prices WHERE station_id = s.id ORDER BY recorded_at DESC LIMIT 1
+            ) AS recorded_at,
+            COALESCE(
+              (
+                SELECT JSON_AGG(
+                  JSON_BUILD_OBJECT(
+                    'price', p.price,
+                    'recorded_at', p.recorded_at
+                  )
+                  ORDER BY p.recorded_at DESC
+                )
+                FROM prices p
+                WHERE p.station_id = s.id
+              ),
+              '[]'
+            ) AS prices
+        FROM stations s
+        WHERE s.id = %s
+        """,
+        (station_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Station not found")
+
+    columns = [col[0] for col in cur.description]
+    row_dict = dict(zip(columns, row))
+    cur.close()
+    conn.close()
+
+    return {
+        "id": row_dict["id"],
+        "name": row_dict["name"],
+        "latitude": row_dict["latitude"],
+        "longitude": row_dict["longitude"],
+        "latest_price": row_dict["latest_price"],
+        "recorded_at": row_dict["recorded_at"],
+        "prices": row_dict["prices"],
+    }
+
+
+
+
+@router.post("/station-sentiment")
+def get_sentiment(data: FeedbackRequest):
+    # Step 1: Get place ID from Google Maps Place Search
+    gmaps_key = os.getenv("GOOGLE_MAPS_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if not gmaps_key or not openai_key:
+        raise HTTPException(status_code=500, detail="Missing API keys.")
+
+    place_search_url = (
+        f"https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        f"?location={data.latitude},{data.longitude}&radius=50"
+        f"&keyword={data.name}&key={gmaps_key}"
+    )
+    res = requests.get(place_search_url).json()
+    place_id = res["results"][0]["place_id"] if res["results"] else None
+    if not place_id:
+        raise HTTPException(status_code=404, detail="Place not found.")
+
+    # Step 2: Get latest reviews
+    details_url = (
+        f"https://maps.googleapis.com/maps/api/place/details/json"
+        f"?place_id={place_id}&fields=review&key={gmaps_key}"
+    )
+    reviews_res = requests.get(details_url).json()
+    reviews = reviews_res.get("result", {}).get("reviews", [])
+
+    if not reviews:
+        return {"summary": "No reviews found."}
+
+    review_texts = [r["text"] for r in reviews[:10]]
+    prompt = (
+        "Analyze the sentiment of the following customer reviews for a gas station. "
+        "Summarize the overall tone and any common praise or complaints:\n\n" +
+        "\n\n".join(review_texts)
+    )
+
+    openai.api_key = openai_key
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a sentiment analysis assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+        )
+        summary = response.choices[0].message.content.strip()
+        return {"summary": summary}
+    except Exception as e:
+        print("OpenAI Error:", str(e))
+        raise HTTPException(status_code=500, detail="Sentiment analysis failed.")

@@ -63,3 +63,8 @@ class RoutePlanResponse(BaseModel):
 class TrafficLog(BaseModel):
     latitude: float
     longitude: float
+
+class FeedbackRequest(BaseModel):
+    name: str
+    latitude: float
+    longitude: float
